@@ -1,0 +1,20 @@
+{
+ "page:calendario-de-adviento": {
+  "name": "calendario-de-adviento",
+  "price": null,
+  "status": "page",
+  "url": "https://www.maquillajetrendyshop.com/calendario-de-adviento"
+ },
+ "page:calendario-de-adviento-nick-90s": {
+  "name": "calendario-de-adviento-nick-90s",
+  "price": null,
+  "status": "page",
+  "url": "https://www.maquillajetrendyshop.com/calendario-de-adviento-nick-90s"
+ },
+ "page:landing-calendario-adviento": {
+  "name": "landing-calendario-adviento",
+  "price": null,
+  "status": "page",
+  "url": "https://www.maquillajetrendyshop.com/landing-calendario-adviento"
+ }
+}
