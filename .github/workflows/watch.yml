@@ -1,0 +1,47 @@
+name: Trendy watch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # GitHub's fastest schedule; the script re-checks every minute in between
+  workflow_dispatch:
+    inputs:
+      test:
+        description: "Send a test alert instead of checking"
+        type: boolean
+        default: false
+
+concurrency:
+  group: trendy-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      NTFY_EMAIL: ${{ secrets.NTFY_EMAIL }}
+      TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+      TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+      WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+      WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+      LOOP_SECONDS: "240"
+      INTERVAL: "60"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test alert
+        if: ${{ inputs.test }}
+        run: python watch.py --test
+      - name: Check store
+        if: ${{ !inputs.test }}
+        run: python watch.py
+      - name: Remember what was seen
+        if: always()
+        run: |
+          git config user.name "trendy-watch"
+          git config user.email "actions@users.noreply.github.com"
+          git add state.json 2>/dev/null || true
+          git diff --cached --quiet || (git commit -m "Update state" && git push)
