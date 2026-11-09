@@ -161,13 +161,19 @@ if __name__ == "__main__":
         sys.exit(0 if notify("Trendy watcher: prueba", "Si lees esto, las alertas funcionan.", STORE) else 1)
     deadline = time.time() + LOOP_SECONDS
     last_ok = False
+    bad_streak = 0
     while True:
         try:
             check()
             last_ok = True
+            bad_streak = 0
         except Exception as e:
             last_ok = False
-            print("check failed:", e)
+            bad_streak += 1
+            print("check failed:", e, flush=True)
+            if bad_streak == 10:  # ten minutes blind: say so instead of failing silently
+                notify("Trendy watcher: no puedo leer la tienda", f"10 intentos fallidos seguidos: {e}", STORE, urgent=False)
+        sys.stdout.flush()
         if time.time() + INTERVAL > deadline:
             break
         time.sleep(INTERVAL)

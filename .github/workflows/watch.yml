@@ -1,8 +1,12 @@
 name: Trendy watch
 
+# How it keeps running: one run checks the store every minute for 5 hours, then
+# starts its own successor before it ends. GitHub's schedule is slow and
+# unreliable, so it is only a safety net that restarts the chain if it breaks.
+
 on:
   schedule:
-    - cron: "*/5 * * * *"   # GitHub's fastest schedule; the script re-checks every minute in between
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       test:
@@ -13,19 +17,25 @@ on:
         description: "Drill: pretend the calendar is called this (e.g. corrector de ojeras aura)"
         type: string
         default: ""
-
-concurrency:
-  group: trendy-watch
-  cancel-in-progress: false
+      minutes:
+        description: "How long this run keeps watching before handing off"
+        type: string
+        default: "300"
+      parent:
+        description: "(internal) run that started this one"
+        type: string
+        default: ""
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 345
     env:
+      GH_TOKEN: ${{ github.token }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       NTFY_EMAIL: ${{ secrets.NTFY_EMAIL }}
       TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -33,20 +43,41 @@ jobs:
       WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
       WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
       KEYWORDS: ${{ inputs.simulate || 'adviento,advent' }}
-      LOOP_SECONDS: ${{ inputs.simulate && '0' || '240' }}
+      MINUTES: ${{ inputs.simulate && '0' || inputs.minutes || '300' }}
       INTERVAL: "60"
+      MODE: ${{ inputs.test && 'test' || inputs.simulate && 'drill' || 'watch' }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Test alert
-        if: ${{ inputs.test }}
+        if: env.MODE == 'test'
         run: python watch.py --test
-      - name: Check store
-        if: ${{ !inputs.test }}
-        run: python watch.py
+
+      - name: Drill
+        if: env.MODE == 'drill'
+        run: python watch.py   # nothing is saved, so a drill cannot affect real detection
+
+      - name: Is another watcher already running?
+        id: guard
+        if: env.MODE == 'watch'
+        run: |
+          others=$(gh run list --workflow watch.yml --status in_progress --json databaseId \
+            --jq '[.[] | select((.databaseId|tostring) != "${{ github.run_id }}" and (.databaseId|tostring) != "${{ inputs.parent }}")] | length')
+          echo "other watchers running: $others"
+          echo "alone=$([ "$others" = "0" ] && echo yes || echo no)" >> "$GITHUB_OUTPUT"
+
+      - name: Watch the store
+        if: steps.guard.outputs.alone == 'yes'
+        run: LOOP_SECONDS=$((MINUTES * 60)) python watch.py
+
       - name: Remember what was seen
-        if: ${{ always() && !inputs.simulate }}   # a drill must not be remembered
+        if: ${{ always() && steps.guard.outputs.alone == 'yes' }}
         run: |
           git config user.name "trendy-watch"
           git config user.email "actions@users.noreply.github.com"
           git add state.json 2>/dev/null || true
-          git diff --cached --quiet || (git commit -m "Update state" && git push)
+          git diff --cached --quiet || (git commit -m "Update state" && git pull --rebase && git push)
+
+      - name: Hand off to the next run
+        if: ${{ !cancelled() && steps.guard.outputs.alone == 'yes' }}
+        run: gh workflow run watch.yml -f parent=${{ github.run_id }}
