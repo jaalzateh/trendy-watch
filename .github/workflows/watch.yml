@@ -9,6 +9,10 @@ on:
         description: "Send a test alert instead of checking"
         type: boolean
         default: false
+      simulate:
+        description: "Drill: pretend the calendar is called this (e.g. corrector de ojeras aura)"
+        type: string
+        default: ""
 
 concurrency:
   group: trendy-watch
@@ -28,7 +32,8 @@ jobs:
       TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
       WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
       WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
-      LOOP_SECONDS: "240"
+      KEYWORDS: ${{ inputs.simulate || 'adviento,advent' }}
+      LOOP_SECONDS: ${{ inputs.simulate && '0' || '240' }}
       INTERVAL: "60"
     steps:
       - uses: actions/checkout@v4
@@ -39,7 +44,7 @@ jobs:
         if: ${{ !inputs.test }}
         run: python watch.py
       - name: Remember what was seen
-        if: always()
+        if: ${{ always() && !inputs.simulate }}   # a drill must not be remembered
         run: |
           git config user.name "trendy-watch"
           git config user.email "actions@users.noreply.github.com"
