@@ -1,4 +1,4 @@
-"""Advent-calendar watcher for VTEX stores (Trendy, Blush Bar).
+"""Advent-calendar watcher for VTEX stores (currently Blush Bar).
 
 Polls each store's public catalog and alerts the moment a product matching
 KEYWORDS shows up or becomes buyable. Standard library only.
@@ -22,10 +22,9 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-# To watch another VTEX store, add a line here. "prefix" namespaces its entries in
-# state.json; Trendy keeps the empty prefix it had when it was the only store.
+# To watch another VTEX store, add a line here. "prefix" namespaces its entries in state.json.
+# (Trendy, https://www.maquillajetrendyshop.com, was watched here until its calendar was bought.)
 STORES = [
-    {"name": "Trendy", "url": "https://www.maquillajetrendyshop.com", "prefix": ""},
     {"name": "Blush Bar", "url": "https://www.blush-bar.com", "prefix": "blushbar:"},
 ]
 KEYWORDS = [k.strip() for k in os.environ.get("KEYWORDS", "adviento,advent").split(",") if k.strip()]
@@ -186,8 +185,6 @@ def check_store(store, state):
 
 def check():
     old = json.load(open(STATE_FILE, encoding="utf-8")) if os.path.exists(STATE_FILE) else {}
-    if old and "_stores" not in old:
-        old["_stores"] = ["Trendy"]  # state written before other stores were added
     state = json.loads(json.dumps(old))
     summary, errors = [], []
 
