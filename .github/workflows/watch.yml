@@ -1,6 +1,6 @@
-name: Trendy watch
+name: Calendar watch
 
-# How it keeps running: one run checks the store every minute for 5 hours, then
+# How it keeps running: one run checks the stores every 30 seconds for 5 hours, then
 # starts its own successor before it ends. GitHub's schedule is slow and
 # unreliable, so it is only a safety net that restarts the chain if it breaks.
 
@@ -44,7 +44,7 @@ jobs:
       WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
       KEYWORDS: ${{ inputs.simulate || 'adviento,advent' }}
       MINUTES: ${{ inputs.simulate && '0' || inputs.minutes || '300' }}
-      INTERVAL: "60"
+      INTERVAL: "30"
       MODE: ${{ inputs.test && 'test' || inputs.simulate && 'drill' || 'watch' }}
     steps:
       - uses: actions/checkout@v4

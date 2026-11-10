@@ -1,8 +1,11 @@
-# Trendy advent-calendar watcher
+# Advent-calendar watcher (Trendy + Blush Bar)
 
-Checks [maquillajetrendyshop.com](https://www.maquillajetrendyshop.com) about once a minute and
-alerts your phone the moment a "Calendario de adviento" appears in the catalog or becomes buyable.
-Runs for free on GitHub Actions, so your computer can be off.
+Checks [maquillajetrendyshop.com](https://www.maquillajetrendyshop.com) and
+[blush-bar.com](https://www.blush-bar.com) every 30 seconds and alerts your phone the moment a
+"Calendario de adviento" appears in a catalog or becomes buyable. Runs for free on GitHub Actions,
+so your computer can be off. Each run watches for 5 hours and then starts its successor.
+
+To watch another store on the same platform (VTEX), add one line to `STORES` in `watch.py`.
 
 ## Setup (about 5 minutes, once)
 
