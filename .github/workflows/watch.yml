@@ -5,6 +5,9 @@ name: Calendar watch
 # unreliable, so it is only a safety net that restarts the chain if it breaks.
 
 on:
+  push:            # new watcher code replaces the running watcher right away
+    branches: [main]
+    paths: ["watch.py", ".github/workflows/watch.yml"]
   schedule:
     - cron: "7,37 * * * *"
   workflow_dispatch:
@@ -61,6 +64,12 @@ jobs:
         id: guard
         if: env.MODE == 'watch'
         run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            for id in $(gh run list --workflow watch.yml --status in_progress --json databaseId --jq '.[].databaseId'); do
+              [ "$id" = "${{ github.run_id }}" ] || gh run cancel "$id" || true
+            done
+            sleep 30
+          fi
           others=$(gh run list --workflow watch.yml --status in_progress --json databaseId \
             --jq '[.[] | select((.databaseId|tostring) != "${{ github.run_id }}" and (.databaseId|tostring) != "${{ inputs.parent }}")] | length')
           echo "other watchers running: $others"
