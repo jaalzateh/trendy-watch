@@ -1,6 +1,7 @@
 name: Probe Girly
 
-# One-off check: can GitHub's servers read girlymaquillaje.com? Safe to delete.
+# Checks from GitHub's servers that the watcher can read girlymaquillaje.com.
+# Sends no alerts and saves nothing. Run it by hand before a launch to re-check.
 on:
   push:
     paths: [".github/workflows/probe.yml"]
@@ -10,31 +11,37 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
-      B: "https://girlymaquillaje.com"
     steps:
-      - name: Home page answers 200
+      - uses: actions/checkout@v4
+      - name: First check reads the store and stays silent
         run: |
-          code=$(curl -sL -m 30 -A "$UA" -o home.html -w "%{http_code}" "$B/" || true)
-          echo "status=$code size=$(wc -c < home.html 2>/dev/null)"; head -c 300 home.html || true
-          [ "$code" = "200" ]
-      - name: Home page is the store, not a bot check
-        if: always()
-        run: grep -qi "woocommerce" home.html
-      - name: Product feed returns JSON
+          rm -f state.json
+          python watch.py | tee out1.txt
+          grep -q "ok - Girly" out1.txt && ! grep -q "ALERT" out1.txt
+      - name: It sees last year's calendars
         if: always()
         run: |
-          curl -sL -m 30 -A "$UA" -o feed.json -w "status=%{http_code}\n" "$B/wp-json/wc/store/v1/products?per_page=5" || true
-          head -c 300 feed.json || true
-          python3 -c "import json; d=json.load(open('feed.json')); assert isinstance(d,list) and d[0]['name']; print(len(d),'products')"
-      - name: Search finds the calendar products
+          cat state.json
+          python -c "import json; s=json.load(open('state.json')); p=[v['name'] for k,v in s.items() if 'product:' in k]; print(p); assert len(p)>=2"
+      - name: Second check stays silent
         if: always()
         run: |
-          curl -sL -m 30 -A "$UA" -o s.json "$B/wp-json/wc/store/v1/products?search=adviento&per_page=20" || true
-          python3 -c "import json; d=json.load(open('s.json')); print([(p['name'],p['is_in_stock']) for p in d]); assert len(d)>=1"
-      - name: Ten feed reads in a row all succeed
+          python watch.py | tee out2.txt
+          grep -q "ok - Girly" out2.txt && ! grep -q "ALERT" out2.txt
+      - name: Simulated restock of a known calendar fires the alert
         if: always()
         run: |
-          ok=0; for i in $(seq 1 10); do c=$(curl -sL -m 30 -A "$UA" -o /dev/null -w "%{http_code}" "$B/wp-json/wc/store/v1/products?search=adviento&_t=$i" || true); echo "$i -> $c"; [ "$c" = "200" ] && ok=$((ok+1)); sleep 3; done
-          [ "$ok" = "10" ]
+          python - <<'PY'
+          import json
+          s = json.load(open('state.json'))
+          gone = [k for k in s if 'product:' in k][0]
+          print('forgetting', s.pop(gone)['name'])
+          json.dump(s, open('state.json', 'w'))
+          PY
+          python watch.py | tee out3.txt
+          grep -q "ALERT: Girly: el calendario ya aparece" out3.txt
+      - name: Drill on an in-stock product fires DISPONIBLE
+        if: always()
+        run: |
+          KEYWORDS="oil to milk" python watch.py | tee out4.txt
+          grep -q "ALERT: Girly: calendario de adviento DISPONIBLE" out4.txt

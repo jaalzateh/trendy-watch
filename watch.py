@@ -1,4 +1,4 @@
-"""Advent-calendar watcher for VTEX stores (currently Blush Bar).
+"""Advent-calendar watcher for online stores (currently Girly, a WooCommerce store).
 
 Polls each store's public catalog and alerts the moment a product matching
 KEYWORDS shows up or becomes buyable. Standard library only.
@@ -12,6 +12,7 @@ Channels are switched on by environment variables (set any, all, or none):
   TELEGRAM_TOKEN, TELEGRAM_CHAT    Telegram bot
   WHATSAPP_PHONE, WHATSAPP_APIKEY  WhatsApp through CallMeBot
 """
+import html
 import json
 import os
 import re
@@ -22,16 +23,19 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-# To watch another VTEX store, add a line here. "prefix" namespaces its entries in state.json.
-# (Trendy, https://www.maquillajetrendyshop.com, was watched here until its calendar was bought.)
+# Stores to watch. "kind" picks the adapter: "woo" (WordPress + WooCommerce) or "vtex".
+# "prefix" namespaces a store's entries in state.json.
+# Watched earlier with the vtex adapter, until their calendars launched:
+#   {"name": "Trendy", "kind": "vtex", "url": "https://www.maquillajetrendyshop.com", "prefix": "trendy:"}
+#   {"name": "Blush Bar", "kind": "vtex", "url": "https://www.blush-bar.com", "prefix": "blushbar:"}
 STORES = [
-    {"name": "Blush Bar", "url": "https://www.blush-bar.com", "prefix": "blushbar:"},
+    {"name": "Girly", "kind": "woo", "url": "https://girlymaquillaje.com", "prefix": "girly:"},
 ]
 KEYWORDS = [k.strip() for k in os.environ.get("KEYWORDS", "adviento,advent").split(",") if k.strip()]
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 LOOP_SECONDS = int(os.environ.get("LOOP_SECONDS", "0"))   # keep re-checking for this long
 INTERVAL = int(os.environ.get("INTERVAL", "60"))          # seconds between checks in a loop
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36"
+UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 PAGE = 50  # VTEX maximum per request
 
 
@@ -90,9 +94,8 @@ def calendar_categories(base):
     return found
 
 
-def snapshot(store):
-    """{key: {name, url, status, price}} for everything that looks like the calendar."""
-    base, prefix = store["url"], store["prefix"]
+def vtex_products(base):
+    """Calendar products of a VTEX store as {id: {name, url, status, price}}."""
     everything = search(base)
     if len(everything) < 20:
         raise RuntimeError(f"catalog returned only {len(everything)} products - the store API may have changed")
@@ -101,17 +104,63 @@ def snapshot(store):
     for path in calendar_categories(base):
         for p in search(base, f"fq=C:/{path}/"):
             hits.setdefault(p["productId"], p)
-
     found = {}
     for p in hits.values():
         offers = [s.get("commertialOffer", {}) for i in p.get("items", []) for s in i.get("sellers", [])]
         qty = sum(o.get("AvailableQuantity") or 0 for o in offers)
-        found[f"{prefix}product:{p['productId']}"] = {
+        found[p["productId"]] = {
             "name": p["productName"],
             "url": f"{base}/{p['linkText']}/p",
             "status": "available" if qty > 0 else "listed",
             "price": next((o.get("Price") for o in offers if o.get("Price")), None),
         }
+    return found
+
+
+def woo_products(base):
+    """Calendar products of a WooCommerce store, read from its public Store API."""
+    api = f"{base}/wp-json/wc/store/v1/products"
+    stamp = int(time.time())  # dodges page caches so we never read stale stock
+
+    # Sanity check: if the feed stops answering with products, fail loudly instead of seeing "nothing".
+    if not json.loads(http(f"{api}?per_page=1&_t={stamp}")):
+        raise RuntimeError("product feed returned no products - the store API may have changed")
+
+    hits = {}
+    for word in KEYWORDS:  # the store's own search looks at names and descriptions
+        q = urllib.parse.urlencode({"search": word, "per_page": 100, "_t": stamp})
+        for p in json.loads(http(f"{api}?{q}")):
+            if matches(p.get("name", "") + " " + p.get("slug", "")):
+                hits[p["id"]] = p
+    # Anything filed under a calendar category counts, whatever it is called.
+    for c in json.loads(http(f"{api}/categories?per_page=100&_t={stamp}")):
+        if matches(c.get("name", "") + " " + c.get("slug", "")):
+            for p in json.loads(http(f"{api}?category={c['id']}&per_page=100&_t={stamp}")):
+                hits.setdefault(p["id"], p)
+
+    found = {}
+    for p in hits.values():
+        prices = p.get("prices") or {}
+        try:
+            price = int(prices["price"]) / 10 ** int(prices.get("currency_minor_unit") or 0)
+        except (KeyError, TypeError, ValueError):
+            price = None
+        found[p["id"]] = {
+            "name": html.unescape(p["name"]),
+            "url": p.get("permalink") or f"{base}/?p={p['id']}",
+            "status": "available" if p.get("is_in_stock") and p.get("is_purchasable") else "listed",
+            "price": price,
+        }
+    return found
+
+
+ADAPTERS = {"vtex": vtex_products, "woo": woo_products}
+
+
+def snapshot(store):
+    """{key: {name, url, status, price}} for everything that looks like the calendar."""
+    base, prefix = store["url"], store["prefix"]
+    found = {f"{prefix}product:{pid}": item for pid, item in ADAPTERS[store["kind"]](base).items()}
     # Second signal: the home page usually links a landing page before the product goes live.
     home = http(f"{base}/?_t={int(time.time())}")
     for slug in set(re.findall(r"[a-z0-9-]+", home)):
@@ -167,7 +216,7 @@ def check_store(store, state):
         price = f" - ${item['price']:,.0f}" if item.get("price") else ""
         if item["status"] == "available":
             ok &= notify(f"{name}: calendario de adviento DISPONIBLE", f"{item['name']}{price}. Corre a comprarlo!", item["url"])
-        elif item["status"] == "listed" and before is None:
+        elif item["status"] == "listed" and before is None and not first_time:
             ok &= notify(f"{name}: el calendario ya aparece en el catalogo", f"{item['name']}{price} (aun sin stock)", item["url"])
         elif item["status"] == "page" and not first_time:
             ok &= notify(f"{name}: nueva pagina de calendario de adviento", item["name"], item["url"], urgent=False)

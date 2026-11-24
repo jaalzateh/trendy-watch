@@ -1,10 +1,10 @@
-# Advent-calendar watcher (Blush Bar)
+# Advent-calendar watcher (Girly)
 
-Checks [blush-bar.com](https://www.blush-bar.com) every 30 seconds and alerts your phone the moment
-a "Calendario de adviento" appears in the catalog or becomes buyable. Runs for free on GitHub
+Checks [girlymaquillaje.com](https://girlymaquillaje.com) every 30 seconds and alerts your phone the
+moment a "Calendario de adviento" appears in the catalog or becomes buyable. Runs for free on GitHub
 Actions, so your computer can be off. Each run watches for 5 hours and then starts its successor.
 
-To watch another store on the same platform (VTEX), add one line to `STORES` in `watch.py`.
+`watch.py` has adapters for WooCommerce and VTEX stores; to watch another one, add a line to `STORES`.
 
 ## Setup (about 5 minutes, once)
 
